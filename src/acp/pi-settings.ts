@@ -61,7 +61,10 @@ export function getEnableSkillCommands(cwd: string): boolean {
  * Mirror pi's quietStartup setting: if true, pi suppresses the verbose startup prelude.
  * We use it to decide whether to synthesize + emit our own "startup info" message.
  */
+/** `PI_ACP_QUIET_STARTUP=true` lets a client quiet the startup info without changing the user's pi settings. */
 export function getQuietStartup(cwd: string): boolean {
+  if (process.env.PI_ACP_QUIET_STARTUP === 'true') return true
+
   const merged = getMergedSettings(cwd)
 
   const direct = merged.quietStartup
