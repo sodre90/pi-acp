@@ -1,7 +1,11 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import * as readline from 'node:readline'
+import { fileURLToPath } from 'node:url'
+import type { McpServer } from '@agentclientprotocol/sdk'
 import crossSpawn from 'cross-spawn'
 import { getPiCommand, shouldUseShellForPiCommand } from './command.js'
+import { SESSION_VARIABLE, type PiMcpServerConfig, type SessionOptions } from './session-extension.js'
 
 export class PiRpcSpawnError extends Error {
   /** Underlying spawn error code, e.g. ENOENT, EACCES */
@@ -103,6 +107,36 @@ type SpawnParams = {
   piCommand?: string
   /** If set, pi will persist the session to this exact file (via `--session <path>`). */
   sessionPath?: string
+  /** MCP servers the ACP client sent for the session; pi gets the stdio and HTTP ones. */
+  mcpServers?: McpServer[]
+}
+
+/** Built next to dist/index.js; run from source (`npm run dev`), pi loads the TypeScript itself. */
+function sessionExtensionPath(): string {
+  const built = fileURLToPath(new URL('./session-extension.js', import.meta.url))
+  return existsSync(built) ? built : fileURLToPath(new URL('./session-extension.ts', import.meta.url))
+}
+
+const asRecord = (pairs: { name: string; value: string }[] = []) =>
+  Object.fromEntries(pairs.map(({ name, value }) => [name, value]))
+
+/** Their tools are declared to the model directly, as an ACP client expects of the servers it sends. */
+function piMcpServers(servers: McpServer[]): SessionOptions['mcpServers'] {
+  const configs = servers.flatMap((server): [string, PiMcpServerConfig][] => {
+    if ('type' in server && server.type === 'http') {
+      return [[server.name, { url: server.url, headers: asRecord(server.headers), exposure: 'direct' }]]
+    }
+    if ('command' in server) {
+      return [
+        [
+          server.name,
+          { command: server.command, args: server.args ?? [], env: asRecord(server.env), exposure: 'direct' }
+        ]
+      ]
+    }
+    return []
+  })
+  return Object.fromEntries(configs)
 }
 
 export class PiRpcProcess {
@@ -162,12 +196,16 @@ export class PiRpcProcess {
     const args = ['--mode', 'rpc', '--no-themes']
     if (params.sessionPath) args.push('--session', params.sessionPath)
 
+    const sessionOptions: SessionOptions = { mcpServers: piMcpServers(params.mcpServers ?? []) }
+    const hasSessionOptions = Object.keys(sessionOptions.mcpServers).length > 0
+    if (hasSessionOptions) args.push('--extension', sessionExtensionPath())
+
     // Windows cmd launchers need shell escaping; direct executables use native argv.
     const start = shouldUseShellForPiCommand(cmd) ? crossSpawn : spawn
     const child = start(cmd, args, {
       cwd: params.cwd,
       stdio: 'pipe',
-      env: process.env
+      env: hasSessionOptions ? { ...process.env, [SESSION_VARIABLE]: JSON.stringify(sessionOptions) } : process.env
     }) as ChildProcessWithoutNullStreams
 
     // Ensure spawn failures (e.g. ENOENT when pi isn't installed) are surfaced as a

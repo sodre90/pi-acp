@@ -30,6 +30,10 @@ Expect some minor breaking changes.
   - Requires a pi version whose `get_session_stats` response includes `contextUsage`; otherwise no usage is reported
   - Right after compaction pi may not have a trustworthy token count yet, so the client keeps the previous value until the next model response
 - Skills are loaded by pi directly and are available in ACP sessions
+- MCP servers from the ACP client
+  - The stdio and HTTP servers a client sends in `session/new` or `session/load` are added to that session's pi through pi's built-in MCP support, with their tools declared to the model directly
+  - Requires pi v0.99.0+; with an older pi the session starts without them
+  - Servers from pi's own `mcp.json` load as usual; one with the same name takes precedence over the client's
 - (Zed) `pi-acp` emits “startup info” block into the session (pi version, context, skills, prompts, extensions - similar to `pi` in the terminal). You can disable it by setting `quietStartup: true` in pi settings (`~/.pi/agent/settings.json` or `<project>/.pi/settings.json`). When `quietStartup` is enabled, `pi-acp` will still emit a 'New version available' message if the installed pi version is outdated.
 - (Zed) Session history is supported in Zed starting with [`v0.225.0`](https://zed.dev/releases/preview/0.225.0). Session loading / history maps to pi's session files. Sessions can be resumed both in `pi` and in the ACP client.
 
@@ -199,7 +203,7 @@ Project layout:
 ## Limitations
 
 - No ACP filesystem delegation (`fs/*`) and no ACP terminal delegation (`terminal/*`). pi reads/writes and executes locally.
-- MCP servers are accepted in ACP params and stored in session state, but not wired through to pi in this adapter. If you use [pi MCP adapter](https://github.com/nicobailon/pi-mcp-adapter) it will be available in the ACP client.
+- MCP servers over SSE are not supported, as pi's MCP support speaks stdio and streamable HTTP only.
 - Assistant streaming is currently sent as `agent_message_chunk` (no separate thought stream).
 - Queue is implemented client-side and should work like pi's `one-at-a-time`
 - ~~ACP clients don't yet suport session history, but ACP sessions from `pi-acp` can be `/resume`d in pi directly~~

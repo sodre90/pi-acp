@@ -200,6 +200,7 @@ export class PiAcpAgent implements ACPAgent {
         proc = await PiRpcProcess.spawn({
           cwd,
           sessionPath: stored.sessionFile,
+          mcpServers: opts?.mcpServers ?? [],
           piCommand: process.env.PI_ACP_PI_COMMAND
         })
       } catch (e: any) {
@@ -255,7 +256,7 @@ export class PiAcpAgent implements ACPAgent {
       }),
       agentCapabilities: {
         loadSession: true,
-        mcpCapabilities: { http: false, sse: false },
+        mcpCapabilities: { http: true, sse: false },
         promptCapabilities: {
           image: true,
           audio: false,
@@ -281,7 +282,6 @@ export class PiAcpAgent implements ACPAgent {
     const fileCommands = loadSlashCommands(params.cwd)
     const enableSkillCommands = getEnableSkillCommands(params.cwd)
 
-    // Pi doesn't support mcpServers, but we accept and store.
     const session = await this.sessions.create({
       cwd: params.cwd,
       mcpServers: params.mcpServers,
