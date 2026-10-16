@@ -192,7 +192,7 @@ export class SessionManager {
     const s = this.sessions.get(sessionId)
     if (!s) return
     try {
-      s.proc.dispose?.()
+      s.close()
     } catch {
       // ignore
     }
@@ -426,6 +426,15 @@ export class PiAcpSession {
 
   wasCancelRequested(): boolean {
     return this.cancelRequested
+  }
+
+  /** Ends the running and queued turns as cancelled, as session/cancel would, and stops pi. */
+  close(): void {
+    this.cancelRequested = true
+    for (const queued of this.turnQueue.splice(0)) queued.resolve('cancelled')
+    this.pendingTurn?.resolve('cancelled')
+    this.pendingTurn = null
+    this.proc.dispose?.()
   }
 
   async setSessionName(name: string): Promise<void> {
