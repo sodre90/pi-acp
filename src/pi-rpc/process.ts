@@ -109,6 +109,8 @@ type SpawnParams = {
   sessionPath?: string
   /** MCP servers the ACP client sent for the session; pi gets the stdio and HTTP ones. */
   mcpServers?: McpServer[]
+  /** Text the ACP client asked to add to pi's system prompt. */
+  appendSystemPrompt?: string
 }
 
 /** Built next to dist/index.js; run from source (`npm run dev`), pi loads the TypeScript itself. */
@@ -196,8 +198,12 @@ export class PiRpcProcess {
     const args = ['--mode', 'rpc', '--no-themes']
     if (params.sessionPath) args.push('--session', params.sessionPath)
 
-    const sessionOptions: SessionOptions = { mcpServers: piMcpServers(params.mcpServers ?? []) }
-    const hasSessionOptions = Object.keys(sessionOptions.mcpServers).length > 0
+    const sessionOptions: SessionOptions = {
+      mcpServers: piMcpServers(params.mcpServers ?? []),
+      appendSystemPrompt: params.appendSystemPrompt ?? ''
+    }
+    const hasSessionOptions =
+      Object.keys(sessionOptions.mcpServers).length > 0 || sessionOptions.appendSystemPrompt !== ''
     if (hasSessionOptions) args.push('--extension', sessionExtensionPath())
 
     // Windows cmd launchers need shell escaping; direct executables use native argv.

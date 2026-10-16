@@ -119,6 +119,14 @@ import { fileURLToPath } from 'node:url'
 
 const pkg = readNearestPackageJson(import.meta.url)
 
+/** Text a client asks to add to the system prompt, in `_meta.systemPrompt.append` as claude-agent-acp reads it. */
+function appendedSystemPrompt(meta: { [key: string]: unknown } | null | undefined): string {
+  const systemPrompt = meta?.systemPrompt
+  const append =
+    typeof systemPrompt === 'object' && systemPrompt !== null && 'append' in systemPrompt ? systemPrompt.append : ''
+  return typeof append === 'string' ? append : ''
+}
+
 export class PiAcpAgent implements ACPAgent {
   private readonly conn: AgentSideConnection
   private readonly sessions = new SessionManager()
@@ -179,7 +187,7 @@ export class PiAcpAgent implements ACPAgent {
 
   private async restoreSession(
     sessionId: string,
-    opts?: { cwd?: string; mcpServers?: LoadSessionRequest['mcpServers'] }
+    opts?: { cwd?: string; mcpServers?: LoadSessionRequest['mcpServers']; appendSystemPrompt?: string }
   ): Promise<PiAcpSession> {
     const existing = this.sessions.maybeGet(sessionId)
     if (existing) return existing
@@ -201,6 +209,7 @@ export class PiAcpAgent implements ACPAgent {
           cwd,
           sessionPath: stored.sessionFile,
           mcpServers: opts?.mcpServers ?? [],
+          appendSystemPrompt: opts?.appendSystemPrompt ?? '',
           piCommand: process.env.PI_ACP_PI_COMMAND
         })
       } catch (e: any) {
@@ -285,6 +294,7 @@ export class PiAcpAgent implements ACPAgent {
     const session = await this.sessions.create({
       cwd: params.cwd,
       mcpServers: params.mcpServers,
+      appendSystemPrompt: appendedSystemPrompt(params._meta),
       conn: this.conn,
       fileCommands,
       piCommand: process.env.PI_ACP_PI_COMMAND
@@ -949,7 +959,8 @@ export class PiAcpAgent implements ACPAgent {
     const enableSkillCommands = getEnableSkillCommands(params.cwd)
     const session = await this.restoreSession(params.sessionId, {
       cwd: params.cwd,
-      mcpServers: params.mcpServers
+      mcpServers: params.mcpServers,
+      appendSystemPrompt: appendedSystemPrompt(params._meta)
     })
     const proc = session.proc
     let configuration: Awaited<ReturnType<typeof getSessionConfiguration>>

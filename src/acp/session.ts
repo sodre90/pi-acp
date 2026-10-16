@@ -37,6 +37,7 @@ import { toolResultToText } from './translate/pi-tools.js'
 type SessionCreateParams = {
   cwd: string
   mcpServers: McpServer[]
+  appendSystemPrompt?: string
   conn: AgentSideConnection
   fileCommands?: import('./slash-commands.js').FileSlashCommand[]
   piCommand?: string
@@ -215,6 +216,7 @@ export class SessionManager {
       proc = await PiRpcProcess.spawn({
         cwd: params.cwd,
         mcpServers: params.mcpServers,
+        appendSystemPrompt: params.appendSystemPrompt,
         piCommand: params.piCommand
       })
     } catch (e) {

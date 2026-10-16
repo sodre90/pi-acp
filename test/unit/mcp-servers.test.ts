@@ -38,7 +38,7 @@ test("PiRpcProcess starts pi with the session extension, which gets the stdio an
   const extension = args[args.indexOf('--extension') + 1]
   assert.ok(extension && existsSync(extension), `expected an existing extension file, got ${extension}`)
   assert.match(extension, /session-extension\.(js|ts)$/)
-  assert.deepEqual(JSON.parse(session ?? '{}'), { mcpServers: piConfigs })
+  assert.deepEqual(JSON.parse(session ?? '{}'), { mcpServers: piConfigs, appendSystemPrompt: '' })
 })
 
 test('PiRpcProcess starts pi as before when the session has no servers pi can use', async () => {
@@ -55,7 +55,8 @@ function registrations(register: (name: string) => void = () => {}) {
     registerMcpServer(name, config) {
       register(name)
       registered.push({ name, config })
-    }
+    },
+    on() {}
   })
   return registered
 }

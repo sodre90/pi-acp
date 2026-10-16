@@ -34,6 +34,9 @@ Expect some minor breaking changes.
   - The stdio and HTTP servers a client sends in `session/new` or `session/load` are added to that session's pi through pi's built-in MCP support, with their tools declared to the model directly
   - Requires pi v0.99.0+; with an older pi the session starts without them
   - Servers from pi's own `mcp.json` load as usual; one with the same name takes precedence over the client's
+- Instructions from the ACP client
+  - Text a client sends in `_meta.systemPrompt.append` of `session/new` or `session/load` is added to the end of pi's system prompt, after what pi's own `APPEND_SYSTEM.md` adds (the same field claude-agent-acp reads)
+  - Requires pi v0.86.0+, where extensions can change the system prompt's sections; with an older pi the session starts without the text
 - (Zed) `pi-acp` emits “startup info” block into the session (pi version, context, skills, prompts, extensions - similar to `pi` in the terminal). You can disable it by setting `quietStartup: true` in pi settings (`~/.pi/agent/settings.json` or `<project>/.pi/settings.json`). When `quietStartup` is enabled, `pi-acp` will still emit a 'New version available' message if the installed pi version is outdated.
 - (Zed) Session history is supported in Zed starting with [`v0.225.0`](https://zed.dev/releases/preview/0.225.0). Session loading / history maps to pi's session files. Sessions can be resumed both in `pi` and in the ACP client.
 
