@@ -13,6 +13,8 @@ import {
   type NewSessionRequest,
   type PromptRequest,
   type PromptResponse,
+  type ResumeSessionRequest,
+  type ResumeSessionResponse,
   type SessionConfigOption,
   type SessionInfo,
   type SetSessionConfigOptionRequest,
@@ -265,7 +267,8 @@ export class PiAcpAgent implements ACPAgent {
           // **UNSTABLE** ACP capability used by Zed's codex-acp adapter.
           // Enables a native session picker in clients that support it.
           list: {},
-          delete: {}
+          delete: {},
+          resume: {}
         }
       }
     }
@@ -930,6 +933,18 @@ export class PiAcpAgent implements ACPAgent {
   }
 
   async loadSession(params: LoadSessionRequest): Promise<LoadSessionResponse> {
+    return this.openStoredSession(params, { replayHistory: true })
+  }
+
+  /** Opens a stored session as session/load does, without sending its history to the client again. */
+  async resumeSession(params: ResumeSessionRequest): Promise<ResumeSessionResponse> {
+    return this.openStoredSession({ ...params, mcpServers: params.mcpServers ?? [] }, { replayHistory: false })
+  }
+
+  private async openStoredSession(
+    params: LoadSessionRequest,
+    { replayHistory }: { replayHistory: boolean }
+  ): Promise<LoadSessionResponse> {
     if (!isAbsolute(params.cwd)) {
       throw RequestError.invalidParams(`cwd must be an absolute path: ${params.cwd}`)
     }
@@ -973,8 +988,7 @@ export class PiAcpAgent implements ACPAgent {
       sessionFile: stored.sessionFile
     })
 
-    // Replay full conversation history.
-    const data = (await proc.getMessages()) as any
+    const data = replayHistory ? ((await proc.getMessages()) as any) : null
     const messages = Array.isArray(data?.messages) ? data.messages : []
 
     for (const m of messages) {
