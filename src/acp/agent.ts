@@ -20,6 +20,7 @@ import {
   type SetSessionModeRequest,
   type SetSessionModeResponse,
   type StopReason,
+  type ContentBlock,
   type DeleteSessionRequest,
   type DeleteSessionResponse
 } from '@agentclientprotocol/sdk'
@@ -118,6 +119,22 @@ function mergeCommands(a: AvailableCommand[], b: AvailableCommand[]): AvailableC
 import { fileURLToPath } from 'node:url'
 
 const pkg = readNearestPackageJson(import.meta.url)
+
+/** The ACP steering extension's request, named as claude-agent-acp names it. */
+const STEERING_METHOD = '_session/steering'
+
+type SteerRequest = { sessionId: string; prompt: ContentBlock[]; idleBehavior?: 'promptRequired' }
+
+function parseSteerRequest(params: Record<string, unknown>): SteerRequest {
+  const { sessionId, prompt, _meta } = params as { sessionId?: unknown; prompt?: unknown; _meta?: any }
+  if (typeof sessionId !== 'string' || !sessionId) throw RequestError.invalidParams('steering needs a sessionId')
+  if (!Array.isArray(prompt) || prompt.length === 0) throw RequestError.invalidParams('steering needs a prompt')
+  const idleBehavior = _meta?.steering?.idleBehavior
+  if (idleBehavior !== undefined && idleBehavior !== 'promptRequired') {
+    throw RequestError.invalidParams(`unsupported steering idleBehavior: ${String(idleBehavior)}`)
+  }
+  return { sessionId, prompt: prompt as ContentBlock[], idleBehavior }
+}
 
 export class PiAcpAgent implements ACPAgent {
   private readonly conn: AgentSideConnection
@@ -267,8 +284,31 @@ export class PiAcpAgent implements ACPAgent {
           list: {},
           delete: {}
         }
-      }
+      },
+      _meta: { steering: { supported: true } }
     }
+  }
+
+  async extMethod(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
+    if (method === STEERING_METHOD) return this.steer(parseSteerRequest(params))
+    throw RequestError.methodNotFound(method)
+  }
+
+  /**
+   * The message joins the turn running in the session. With no turn running, a client that asks for it in
+   * `_meta.steering.idleBehavior` gets `promptRequired` and sends the message as a prompt itself; otherwise the message
+   * starts a turn of its own.
+   */
+  private async steer({ sessionId, prompt, idleBehavior }: SteerRequest) {
+    const { message, images } = promptToPiMessage(prompt)
+    if (await this.sessions.maybeGet(sessionId)?.steer(message, images)) return { outcome: 'injected' }
+    if (idleBehavior === 'promptRequired') return { outcome: 'promptRequired', reason: 'noRunningTurn' }
+    this.prompt({ sessionId, prompt }).catch(error => {
+      console.error(
+        `pi-acp: a steered message could not start a turn: ${error instanceof Error ? error.message : String(error)}`
+      )
+    })
+    return { outcome: 'startedNewTurn' }
   }
 
   async newSession(params: NewSessionRequest) {

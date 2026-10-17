@@ -302,6 +302,8 @@ export class PiAcpSession {
   // Current in-flight turn (if any). Additional prompts are queued.
   private pendingTurn: PendingTurn | null = null
   private readonly turnQueue: QueuedTurn[] = []
+  // pi has settled the turn, which stays pending until its last updates are out.
+  private settlingTurn = false
   // Track tool call statuses and ensure they are monotonic (pending -> in_progress -> completed).
   // Some pi events can arrive out of order (e.g. late toolcall_* deltas after execution starts),
   // and clients may hide progress if we ever downgrade back to `pending`.
@@ -400,6 +402,16 @@ export class PiAcpSession {
     })
 
     return turnPromise
+  }
+
+  /**
+   * Adds the message to the running turn, as pi's steer does. Sends nothing and returns false when no turn is running,
+   * or when pi has already settled it.
+   */
+  async steer(message: string, images: unknown[] = []): Promise<boolean> {
+    if (!this.pendingTurn || this.settlingTurn) return false
+    await this.proc.steer(expandSlashCommand(message, this.fileCommands), images)
+    return true
   }
 
   async cancel(): Promise<void> {
@@ -513,6 +525,7 @@ export class PiAcpSession {
   }
 
   private async settleTurn(): Promise<void> {
+    this.settlingTurn = true
     // Ensure all updates derived from pi events (plus the final usage update) are
     // delivered before we resolve the ACP `session/prompt` request.
     await this.publishContextUsage()
@@ -520,6 +533,7 @@ export class PiAcpSession {
     const reason: StopReason = this.cancelRequested ? 'cancelled' : 'end_turn'
     this.pendingTurn?.resolve(reason)
     this.pendingTurn = null
+    this.settlingTurn = false
     this.inAgentLoop = false
 
     // Start next queued prompt, if any.

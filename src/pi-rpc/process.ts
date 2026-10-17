@@ -30,6 +30,7 @@ function stripAnsi(s: string): string {
 
 type PiRpcCommand =
   | { type: 'prompt'; id?: string; message: string; images?: unknown[] }
+  | { type: 'steer'; id?: string; message: string; images?: unknown[] }
   | { type: 'abort'; id?: string }
   | { type: 'get_state'; id?: string }
   // Model
@@ -259,6 +260,12 @@ export class PiRpcProcess {
   async prompt(message: string, images: unknown[] = []): Promise<void> {
     const res = await this.request({ type: 'prompt', message, images })
     if (!res.success) throw new Error(`pi prompt failed: ${res.error ?? JSON.stringify(res.data)}`)
+  }
+
+  /** pi takes the message into the running agent loop once its current tool calls finish, before the next model call. */
+  async steer(message: string, images: unknown[] = []): Promise<void> {
+    const res = await this.request({ type: 'steer', message, images })
+    if (!res.success) throw new Error(`pi steer failed: ${res.error ?? JSON.stringify(res.data)}`)
   }
 
   async abort(): Promise<void> {
