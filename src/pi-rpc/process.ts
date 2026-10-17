@@ -49,10 +49,16 @@ type PiRpcCommand =
   | { type: 'set_session_name'; id?: string; name: string }
   | { type: 'export_html'; id?: string; outputPath?: string }
   | { type: 'switch_session'; id?: string; sessionPath: string }
+  | { type: 'get_entries'; id?: string }
+  | { type: 'fork'; id?: string; entryId: string }
+  | { type: 'clone'; id?: string }
   // Messages
   | { type: 'get_messages'; id?: string }
   // Commands
   | { type: 'get_commands'; id?: string }
+
+/** How pi forks a session: its `fork` keeps what came before a user message, its `clone` keeps all of it. */
+export type PiForkCommand = { type: 'fork'; entryId: string } | { type: 'clone' }
 
 type PiRpcResponse = {
   type: 'response'
@@ -347,6 +353,25 @@ export class PiRpcProcess {
   async switchSession(sessionPath: string): Promise<void> {
     const res = await this.request({ type: 'switch_session', sessionPath })
     if (!res.success) throw new Error(`pi switch_session failed: ${res.error ?? JSON.stringify(res.data)}`)
+  }
+
+  /** Every entry of the session file, earlier branches included, and the leaf of the current branch. */
+  async getEntries(): Promise<unknown> {
+    const res = await this.request({ type: 'get_entries' })
+    if (!res.success) throw new Error(`pi get_entries failed: ${res.error ?? JSON.stringify(res.data)}`)
+    return res.data
+  }
+
+  /**
+   * Switches this pi to a new session that keeps what came before the user message `entryId`, or to a copy of the whole
+   * session for `clone`. The session it had stays as it was.
+   */
+  async fork(command: PiForkCommand): Promise<void> {
+    const res = await this.request(command)
+    if (!res.success) throw new Error(`pi ${command.type} failed: ${res.error ?? JSON.stringify(res.data)}`)
+    if ((res.data as { cancelled?: unknown } | undefined)?.cancelled === true) {
+      throw new Error(`pi ${command.type} was cancelled by an extension`)
+    }
   }
 
   async getMessages(): Promise<unknown> {

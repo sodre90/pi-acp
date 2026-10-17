@@ -21,12 +21,15 @@ import {
   type SetSessionModeResponse,
   type StopReason,
   type DeleteSessionRequest,
-  type DeleteSessionResponse
+  type DeleteSessionResponse,
+  type ForkSessionRequest,
+  type ForkSessionResponse
 } from '@agentclientprotocol/sdk'
 import { getAuthMethods } from './auth.js'
 import { SessionManager, type PiAcpSession } from './session.js'
 import { SessionStore } from './session-store.js'
 import { PiRpcProcess } from '../pi-rpc/process.js'
+import { forkCommandAt, forkPointOf, piMessageId, type PiSessionEntry } from './session-fork.js'
 import { listPiSessions, findPiSession, readPiSessionTitle } from './pi-sessions.js'
 import { normalizePiAssistantText, normalizePiMessageText } from './translate/pi-messages.js'
 import { toolResultToText } from './translate/pi-tools.js'
@@ -119,6 +122,24 @@ import { fileURLToPath } from 'node:url'
 
 const pkg = readNearestPackageJson(import.meta.url)
 
+async function spawnPiOn(sessionFile: string, cwd: string): Promise<PiRpcProcess> {
+  try {
+    return await PiRpcProcess.spawn({ cwd, sessionPath: sessionFile, piCommand: process.env.PI_ACP_PI_COMMAND })
+  } catch (e: any) {
+    if (e?.name === 'PiRpcSpawnError') {
+      throw RequestError.internalError({ code: e?.code }, String(e?.message ?? e))
+    }
+    throw e
+  }
+}
+
+async function forkCommandFor(proc: PiRpcProcess, messageId: string) {
+  const { entries, leafId } = (await proc.getEntries()) as { entries?: PiSessionEntry[]; leafId?: string | null }
+  const command = forkCommandAt(entries ?? [], leafId ?? null, messageId)
+  if (!command) throw RequestError.invalidParams(`The session has no agent message ${messageId} to fork at`)
+  return command
+}
+
 export class PiAcpAgent implements ACPAgent {
   private readonly conn: AgentSideConnection
   private readonly sessions = new SessionManager()
@@ -195,19 +216,7 @@ export class PiAcpAgent implements ACPAgent {
 
       const cwd = opts?.cwd ?? stored.cwd
 
-      let proc: PiRpcProcess
-      try {
-        proc = await PiRpcProcess.spawn({
-          cwd,
-          sessionPath: stored.sessionFile,
-          piCommand: process.env.PI_ACP_PI_COMMAND
-        })
-      } catch (e: any) {
-        if (e?.name === 'PiRpcSpawnError') {
-          throw RequestError.internalError({ code: e?.code }, String(e?.message ?? e))
-        }
-        throw e
-      }
+      const proc = await spawnPiOn(stored.sessionFile, cwd)
 
       const fileCommands = loadSlashCommands(cwd)
       const session = this.sessions.getOrCreate(sessionId, {
@@ -265,7 +274,8 @@ export class PiAcpAgent implements ACPAgent {
           // **UNSTABLE** ACP capability used by Zed's codex-acp adapter.
           // Enables a native session picker in clients that support it.
           list: {},
-          delete: {}
+          delete: {},
+          fork: {}
         }
       }
     }
@@ -995,12 +1005,14 @@ export class PiAcpAgent implements ACPAgent {
 
       if (role === 'assistant') {
         const text = normalizePiAssistantText(m?.content)
+        const messageId = piMessageId(m)
         if (text) {
           await this.conn.sessionUpdate({
             sessionId: session.sessionId,
             update: {
               sessionUpdate: 'agent_message_chunk',
-              content: { type: 'text', text }
+              content: { type: 'text', text },
+              ...(messageId && { messageId })
             }
           })
         }
@@ -1116,6 +1128,36 @@ export class PiAcpAgent implements ACPAgent {
     }, 0)
 
     return response
+  }
+
+  /**
+   * A new session that holds what the session had up to the agent message a client names the way claude-agent-acp
+   * reads it (`_meta.jetbrains.air.fork.messageId`), with the rest of that message's turn; without one, all of it. A pi
+   * of its own makes the new session file with pi's fork, so the session stays as it was, and is gone once that is
+   * done: the client loads or resumes the new session as any other.
+   */
+  async unstable_forkSession(params: ForkSessionRequest): Promise<ForkSessionResponse> {
+    if (!isAbsolute(params.cwd)) {
+      throw RequestError.invalidParams(`cwd must be an absolute path: ${params.cwd}`)
+    }
+    const stored = this.findStoredSession(params.sessionId)
+    if (!stored) {
+      throw RequestError.invalidParams(`Unknown sessionId: ${params.sessionId}`)
+    }
+    const point = forkPointOf(params._meta)
+
+    const proc = await spawnPiOn(stored.sessionFile, params.cwd)
+    try {
+      await proc.fork(point ? await forkCommandFor(proc, point) : { type: 'clone' })
+      const state = (await proc.getState()) as { sessionId?: unknown; sessionFile?: unknown } | null
+      if (typeof state?.sessionId !== 'string' || typeof state.sessionFile !== 'string') {
+        throw RequestError.internalError({}, 'pi did not say which session the fork made')
+      }
+      this.store.upsert({ sessionId: state.sessionId, cwd: params.cwd, sessionFile: state.sessionFile })
+      return { sessionId: state.sessionId }
+    } finally {
+      proc.dispose()
+    }
   }
 
   async deleteSession(params: DeleteSessionRequest): Promise<DeleteSessionResponse> {

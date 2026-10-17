@@ -19,6 +19,7 @@ import {
   type PiSessionStats
 } from '../pi-rpc/process.js'
 import { maybeAuthRequiredError } from './auth-required.js'
+import { piMessageId } from './session-fork.js'
 import { SessionStore } from './session-store.js'
 import { expandSlashCommand, type FileSlashCommand } from './slash-commands.js'
 import {
@@ -311,6 +312,8 @@ export class PiAcpSession {
   // when retry, compaction, or queued continuations run. The session-level prompt
   // completes only when `agent_settled` is emitted.
   private inAgentLoop = false
+  /** The `messageId` of the assistant message streaming now: pi names its message on `message_start` alone. */
+  private streamingMessageId: string | undefined
 
   // For ACP diff support: capture file contents before edit/write mutations,
   // then emit ToolCallContent {type:"diff"}. Compatible structured edit/write
@@ -645,14 +648,22 @@ export class PiAcpSession {
         break
       }
 
+      case 'message_start': {
+        const message = (ev as { message?: { role?: unknown } }).message
+        if (message?.role === 'assistant') this.streamingMessageId = piMessageId(message)
+        break
+      }
+
       case 'message_update': {
         const ame = (ev as any).assistantMessageEvent
 
         // Stream assistant text.
         if (ame?.type === 'text_delta' && typeof ame.delta === 'string') {
+          const messageId = this.streamingMessageId
           this.emit({
             sessionUpdate: 'agent_message_chunk',
-            content: { type: 'text', text: ame.delta } satisfies ContentBlock
+            content: { type: 'text', text: ame.delta } satisfies ContentBlock,
+            ...(messageId && { messageId })
           })
           break
         }

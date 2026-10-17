@@ -29,6 +29,10 @@ Expect some minor breaking changes.
   - Reports pi's real context occupancy (`get_session_stats` → `contextUsage`) to the client as ACP `usage_update` after each turn, on `session/new` and `session/load`, and after a model switch
   - Requires a pi version whose `get_session_stats` response includes `contextUsage`; otherwise no usage is reported
   - Right after compaction pi may not have a trustworthy token count yet, so the client keeps the previous value until the next model response
+- Session fork
+  - Advertises `sessionCapabilities.fork` and answers `session/fork` with a new pi session file made by pi's own `fork` (or `clone` for the whole session); the session forked from stays as it was
+  - A fork point named as claude-agent-acp reads it (`_meta.jetbrains.air.fork.messageId`) keeps that agent message and the rest of its turn
+  - Agent message chunks carry a `messageId`, the pi message's timestamp, which stays the same live, in replayed history and in forks
 - Skills are loaded by pi directly and are available in ACP sessions
 - (Zed) `pi-acp` emits “startup info” block into the session (pi version, context, skills, prompts, extensions - similar to `pi` in the terminal). You can disable it by setting `quietStartup: true` in pi settings (`~/.pi/agent/settings.json` or `<project>/.pi/settings.json`). When `quietStartup` is enabled, `pi-acp` will still emit a 'New version available' message if the installed pi version is outdated.
 - (Zed) Session history is supported in Zed starting with [`v0.225.0`](https://zed.dev/releases/preview/0.225.0). Session loading / history maps to pi's session files. Sessions can be resumed both in `pi` and in the ACP client.
